@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+  CUSTOMER
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+enum InventoryChangeType {
+  IMPORT
+  EXPORT
+  ORDER_DEDUCT
+  ADJUSTMENT
+}
+
+model User {
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  password             String
+  fullName             String
+  phone                String?
+  address              String?
+  role                 Role      @default(CUSTOMER)
+  isActive             Boolean   @default(true)
+  isEmailVerified      Boolean   @default(false)
+  emailVerifyOtp       String?
+  emailVerifyToken     String?   @unique
+  emailVerifyExpires   DateTime?
+  resetPasswordOtp     String?
+  resetPasswordToken   String?   @unique
+  resetPasswordExpires DateTime?
+  hashedRefreshToken   String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  orders               Order[]
+  cart                 Cart?
+  logs                 InventoryLog[]
+
+  @@map("users")
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  // Required fields as per specification:
+  // ProductID, ProductName, PathImage, ProductType, Quantity, Unit, Price, Description, CreateDate, UpdateDate
+  ProductID   String   @id
+  ProductName String
+  PathImage   String?
+  ProductType String
+  Quantity    Int      @default(0)
+  Unit        String   @default("gói")
+  Price       Float    @default(0)
+  Description String?  @db.Text
+  CreateDate  DateTime @default(now())
+  UpdateDate  DateTime @updatedAt
+
+  // AI Recommendation attributes
+  roastLevel  String?  // Light, Medium, Dark, Medium-Dark
+  flavorNotes String?  // e.g. "Chocolate, Fruity, Nutty, Floral, Caramel"
+  origin      String?  // Da Lat, Buon Ma Thuot, Cau Dat, Ethiopia...
+  isFeatured  Boolean  @default(false)
+
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  orderItems    OrderItem[]
+  cartItems     CartItem[]
+  inventoryLogs InventoryLog[]
+
+  @@map("products")
+}
+
+model Order {
+  id              String        @id @default(uuid())
+  orderNumber     String        @unique
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(UNPAID)
+  paymentMethod   String        @default("COD") // COD, VNPAY, MOMO, BANK_TRANSFER
+  totalAmount     Float
+  shippingAddress String
+  recipientName   String
+  recipientPhone  String
+  note            String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [ProductID])
+  quantity  Int
+  price     Float
+
+  @@map("order_items")
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  items     CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid())
+  cartId    String
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [ProductID], onDelete: Cascade)
+  quantity  Int      @default(1)
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model InventoryLog {
+  id          String              @id @default(uuid())
+  productId   String
+  product     Product             @relation(fields: [productId], references: [ProductID], onDelete: Cascade)
+  type        InventoryChangeType
+  quantity    Int
+  balanceAfter Int
+  reason      String?
+  createdById String?
+  createdBy   User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime            @default(now())
+
+  @@map("inventory_logs")
+}

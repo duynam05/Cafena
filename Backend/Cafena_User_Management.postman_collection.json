@@ -1,0 +1,273 @@
+{
+  "info": {
+    "_postman_id": "cafena-user-collection-v1",
+    "name": "Cafena Coffee - 2. User & Account Management",
+    "description": "Bộ sưu tập kiểm thử toàn diện Chức năng 2: User – Quản lý tài khoản (Hồ sơ, Avatar, Mật khẩu, Danh bạ địa chỉ, Lịch sử mua hàng).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "addressId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Đăng nhập lấy Token (Login)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const res = pm.response.json();",
+              "    if (res.data && res.data.accessToken) {",
+              "        pm.collectionVariables.set('accessToken', res.data.accessToken);",
+              "        console.log('Đã tự động lưu AccessToken vào biến Collection!');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@cafena.vn\",\n  \"password\": \"customer123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "1. Lấy thông tin tài khoản hiện tại (Get Profile)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/users/profile",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "profile"]
+        }
+      }
+    },
+    {
+      "name": "2. Cập nhật họ tên, SĐT, Email (Update Profile)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"fullName\": \"Nguyễn Văn A (Cập nhật)\",\n  \"phone\": \"0988776655\",\n  \"address\": \"123 Phố Cà Phê, Hà Nội\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/profile",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "profile"]
+        }
+      }
+    },
+    {
+      "name": "3. Cập nhật ảnh đại diện (Upload Avatar)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "avatar",
+              "type": "file",
+              "description": "Chọn tệp ảnh JPG, PNG, WEBP"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/profile/avatar",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "profile", "avatar"]
+        }
+      }
+    },
+    {
+      "name": "4. Thay đổi mật khẩu (Change Password)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"currentPassword\": \"customer123\",\n  \"newPassword\": \"NewPassword123@\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/profile/change-password",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "profile", "change-password"]
+        }
+      }
+    },
+    {
+      "name": "5. Lấy danh sách địa chỉ giao hàng (Get Addresses)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/users/addresses",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "addresses"]
+        }
+      }
+    },
+    {
+      "name": "6. Thêm địa chỉ giao hàng mới (Create Address)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    const res = pm.response.json();",
+              "    if (res.data && res.data.address) {",
+              "        pm.collectionVariables.set('addressId', res.data.address.id);",
+              "        console.log('Đã lưu addressId vào biến Collection!');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"recipientName\": \"Nguyễn Văn A\",\n  \"phone\": \"0901234567\",\n  \"streetAddress\": \"Số 10 Phố Huỳnh Thúc Kháng\",\n  \"ward\": \"Phường Láng Hạ\",\n  \"district\": \"Quận Đống Đa\",\n  \"province\": \"Hà Nội\",\n  \"isDefault\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/addresses",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "addresses"]
+        }
+      }
+    },
+    {
+      "name": "7. Sửa địa chỉ giao hàng (Update Address)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"recipientName\": \"Nguyễn Văn A (Nhà riêng)\",\n  \"streetAddress\": \"Số 20 Phố Huỳnh Thúc Kháng\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/users/addresses/{{addressId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "addresses", "{{addressId}}"]
+        }
+      }
+    },
+    {
+      "name": "8. Thiết lập địa chỉ mặc định (Set Default Address)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/users/addresses/{{addressId}}/default",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "addresses", "{{addressId}}", "default"]
+        }
+      }
+    },
+    {
+      "name": "9. Xóa địa chỉ giao hàng (Delete Address)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/users/addresses/{{addressId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "addresses", "{{addressId}}"]
+        }
+      }
+    },
+    {
+      "name": "10. Xem lịch sử mua hàng của bản thân (My Orders)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/users/orders?page=1&limit=10",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "orders"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "10" },
+            { "key": "status", "value": "COMPLETED", "disabled": true }
+          ]
+        }
+      }
+    },
+    {
+      "name": "11. Xem chi tiết đơn hàng của bản thân (My Order Detail)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/users/orders/{{orderId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["users", "orders", "{{orderId}}"]
+        }
+      }
+    }
+  ]
+}

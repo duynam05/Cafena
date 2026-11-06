@@ -14,31 +14,86 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ProductService } from '../services/product.service.js';
-import { CreateProductDto, UpdateProductDto, QueryProductDto, BatchDeleteDto, BatchDuplicateDto } from '../dto/product.dto.js';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  QueryProductDto,
+  ProductCollectionQueryDto,
+  BatchDeleteDto,
+  BatchDuplicateDto,
+} from '../dto/product.dto.js';
 import { Public } from '../guards/public.decorator.js';
 import { Roles } from '../guards/roles.decorator.js';
 import { Role } from '@prisma/client';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard.js';
 import { RolesGuard } from '../guards/roles.guard.js';
 
-@ApiTags('Quản lý Sản phẩm (Products)')
+@ApiTags('Quản lý & Hiển thị Sản phẩm (Products)')
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
+  // ==========================================
+  // 1. TRUY VẤN DANH SÁCH & BỘ SƯU TẬP (PUBLIC)
+  // ==========================================
+
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Chức năng 1 & 6: Lấy danh sách sản phẩm (Phân trang 10-15/trang, tìm kiếm đa tiêu chí)' })
+  @ApiOperation({
+    summary: 'Lấy danh sách sản phẩm (Phân trang 10-15/trang, tìm kiếm đa trường & bộ lọc toàn diện)',
+    description:
+      'Hỗ trợ tìm kiếm theo tên, mã, mô tả; lọc theo danh mục, loại sản phẩm, khoảng giá, độ rang, tình trạng còn hàng (inStockOnly); sắp xếp theo giá, ngày tạo, bán chạy.',
+  })
   findAll(@Query() query: QueryProductDto) {
     return this.productService.findAll(query);
   }
 
-  // --- EXPORT ENDPOINTS (Chức năng 9) ---
+  @Public()
+  @Get('collection/newest')
+  @ApiOperation({
+    summary: 'Lấy danh sách sản phẩm mới nhất',
+    description: 'Lấy top N sản phẩm mới ra mắt được sắp xếp theo ngày tạo gần nhất.',
+  })
+  getNewest(@Query() query: ProductCollectionQueryDto) {
+    return this.productService.getNewest(Number(query.limit) || 8);
+  }
+
+  @Public()
+  @Get('collection/featured')
+  @ApiOperation({
+    summary: 'Lấy danh sách sản phẩm nổi bật',
+    description: 'Lấy danh sách các sản phẩm tiêu biểu được gắn cờ isFeatured = true.',
+  })
+  getFeatured(@Query() query: ProductCollectionQueryDto) {
+    return this.productService.getFeatured(Number(query.limit) || 8);
+  }
+
+  @Public()
+  @Get('collection/best-sellers')
+  @ApiOperation({
+    summary: 'Lấy danh sách sản phẩm bán chạy nhất',
+    description: 'Lấy top N sản phẩm có số lượng bán nhiều nhất từ các đơn hàng thực tế.',
+  })
+  getBestSellers(@Query() query: ProductCollectionQueryDto) {
+    return this.productService.getBestSellers(Number(query.limit) || 8);
+  }
+
+  // ==========================================
+  // 2. XUẤT DỮ LIỆU ĐA ĐỊNH DẠNG (EXPORT)
+  // ==========================================
+
   @Public()
   @Get('export/excel')
-  @ApiOperation({ summary: 'Chức năng 9: Xuất danh sách sản phẩm ra tệp Excel (.xlsx)' })
+  @ApiOperation({ summary: 'Xuất danh sách sản phẩm ra tệp Excel (.xlsx)' })
   async exportExcel(@Res() res: any) {
     const buffer = await this.productService.exportExcel();
     res.setHeader(
@@ -54,14 +109,14 @@ export class ProductController {
 
   @Public()
   @Get('export/json')
-  @ApiOperation({ summary: 'Chức năng 9: Xuất danh sách sản phẩm dạng JSON' })
+  @ApiOperation({ summary: 'Xuất danh sách sản phẩm dạng JSON' })
   exportJson() {
     return this.productService.exportJson();
   }
 
   @Public()
   @Get('export/xml')
-  @ApiOperation({ summary: 'Chức năng 9: Xuất danh sách sản phẩm dạng XML' })
+  @ApiOperation({ summary: 'Xuất danh sách sản phẩm dạng XML' })
   async exportXml(@Res() res: any) {
     const xml = await this.productService.exportXml();
     res.setHeader('Content-Type', 'application/xml');
@@ -69,12 +124,15 @@ export class ProductController {
     return res.send(xml);
   }
 
-  // --- IMPORT ENDPOINTS (Chức năng 9) ---
+  // ==========================================
+  // 3. NHẬP DỮ LIỆU ĐA ĐỊNH DẠNG (IMPORT)
+  // ==========================================
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Post('import/excel')
-  @ApiOperation({ summary: 'Chức năng 9: Nhập sản phẩm từ tệp Excel (.xlsx) - Quản trị viên/Nhân viên' })
+  @ApiOperation({ summary: 'Nhập sản phẩm từ tệp Excel (.xlsx) - Quản trị viên/Nhân viên' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -96,7 +154,7 @@ export class ProductController {
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Post('import/json')
-  @ApiOperation({ summary: 'Chức năng 9: Nhập sản phẩm từ định dạng JSON' })
+  @ApiOperation({ summary: 'Nhập sản phẩm từ định dạng JSON' })
   importJson(@Body() items: any[]) {
     return this.productService.importJson(items);
   }
@@ -105,7 +163,7 @@ export class ProductController {
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Post('import/xml')
-  @ApiOperation({ summary: 'Chức năng 9: Nhập sản phẩm từ nội dung XML' })
+  @ApiOperation({ summary: 'Nhập sản phẩm từ nội dung XML' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -125,12 +183,15 @@ export class ProductController {
     return this.productService.importXml(xmlContent);
   }
 
-  // --- BATCH ACTIONS (Chức năng 5 & 8) ---
+  // ==========================================
+  // 4. THAO TÁC HÀNG LOẠT (BATCH ACTIONS)
+  // ==========================================
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN)
   @ApiBearerAuth('JWT-auth')
   @Post('batch-delete')
-  @ApiOperation({ summary: 'Chức năng 5: Xóa nhiều sản phẩm bằng danh sách ProductID (hỗ trợ checkbox)' })
+  @ApiOperation({ summary: 'Xóa nhiều sản phẩm bằng danh sách ProductID (hỗ trợ checkbox)' })
   batchDelete(@Body() dto: BatchDeleteDto) {
     return this.productService.batchDelete(dto);
   }
@@ -139,7 +200,7 @@ export class ProductController {
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Post('batch-duplicate')
-  @ApiOperation({ summary: 'Chức năng 8: Sao chép nhiều bản ghi sản phẩm hàng loạt' })
+  @ApiOperation({ summary: 'Sao chép nhiều bản ghi sản phẩm hàng loạt' })
   batchDuplicate(@Body() dto: BatchDuplicateDto) {
     return this.productService.batchDuplicate(dto);
   }
@@ -148,24 +209,58 @@ export class ProductController {
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Post(':id/duplicate')
-  @ApiOperation({ summary: 'Chức năng 7: Sao chép 1 bản ghi sản phẩm và tự động cấp mã mới' })
+  @ApiOperation({ summary: 'Sao chép 1 bản ghi sản phẩm và tự động cấp mã mới' })
   duplicate(@Param('id') id: string) {
     return this.productService.duplicate(id);
   }
 
-  // --- STANDARD CRUD (Chức năng 2, 3, 4, 5a) ---
+  // ==========================================
+  // 5. TRUY VẤN CHI TIẾT & SẢN PHẨM LIÊN QUAN
+  // ==========================================
+
   @Public()
-  @Get(':id')
-  @ApiOperation({ summary: 'Chức năng 4: Xem chi tiết 1 sản phẩm' })
-  findOne(@Param('id') id: string) {
-    return this.productService.findOne(id);
+  @Get(':idOrSlug/related')
+  @ApiOperation({
+    summary: 'Lấy danh sách sản phẩm liên quan',
+    description: 'Gợi ý các sản phẩm cùng danh mục hoặc cùng loại sản phẩm, loại trừ sản phẩm hiện tại.',
+  })
+  @ApiQuery({ name: 'limit', required: false, example: 4 })
+  getRelated(
+    @Param('idOrSlug') idOrSlug: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.productService.getRelated(idOrSlug, Number(limit) || 4);
   }
+
+  @Public()
+  @Get(':idOrSlug/stock-status')
+  @ApiOperation({
+    summary: 'Kiểm tra tình trạng kinh doanh và tồn kho của sản phẩm',
+    description: 'Trả về trạng thái hoạt động (isActive), số lượng tồn, trạng thái tồn kho (IN_STOCK, LOW_STOCK, OUT_OF_STOCK) và cờ canOrder.',
+  })
+  getStockStatus(@Param('idOrSlug') idOrSlug: string) {
+    return this.productService.getStockStatus(idOrSlug);
+  }
+
+  @Public()
+  @Get(':idOrSlug')
+  @ApiOperation({
+    summary: 'Lấy chi tiết sản phẩm theo ID hoặc Slug SEO',
+    description: 'Endpoint thông minh: tự động nhận diện nếu truyền mã ProductID (ví dụ CF-0001) hoặc Slug (ví dụ arabica-cau-dat).',
+  })
+  findOne(@Param('idOrSlug') idOrSlug: string) {
+    return this.productService.findOne(idOrSlug);
+  }
+
+  // ==========================================
+  // 6. QUẢN LÝ CRUD SẢN PHẨM (ADMIN & STAFF)
+  // ==========================================
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Post()
-  @ApiOperation({ summary: 'Chức năng 2: Thêm mới sản phẩm (Admin, Staff)' })
+  @ApiOperation({ summary: 'Thêm mới sản phẩm (Admin, Staff)' })
   create(@Body() dto: CreateProductDto) {
     return this.productService.create(dto);
   }
@@ -174,7 +269,7 @@ export class ProductController {
   @Roles(Role.ADMIN, Role.STAFF)
   @ApiBearerAuth('JWT-auth')
   @Patch(':id')
-  @ApiOperation({ summary: 'Chức năng 3: Cập nhật sản phẩm' })
+  @ApiOperation({ summary: 'Cập nhật sản phẩm (Admin, Staff)' })
   update(@Param('id') id: string, @Body() dto: UpdateProductDto) {
     return this.productService.update(id, dto);
   }
@@ -183,9 +278,8 @@ export class ProductController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth('JWT-auth')
   @Delete(':id')
-  @ApiOperation({ summary: 'Chức năng 5: Xóa 1 bản ghi sản phẩm' })
+  @ApiOperation({ summary: 'Xóa 1 bản ghi sản phẩm (Admin)' })
   remove(@Param('id') id: string) {
     return this.productService.remove(id);
   }
 }
-

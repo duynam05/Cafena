@@ -1,13 +1,15 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { PaginationDto } from './pagination.dto.js';
 
 export class CreateProductDto {
@@ -25,23 +27,41 @@ export class CreateProductDto {
   })
   @IsNotEmpty({ message: 'Tên sản phẩm không được để trống' })
   @IsString()
-  ProductName: string;
+  ProductName!: string;
 
   @ApiPropertyOptional({
-    description: 'Đường dẫn ảnh sản phẩm',
+    description: 'Đường dẫn URL thân thiện cho SEO (tự sinh từ tên sản phẩm nếu để trống)',
+    example: 'ca-phe-robusta-nguyen-chat-dak-lak-500g',
+  })
+  @IsOptional()
+  @IsString()
+  slug?: string;
+
+  @ApiPropertyOptional({
+    description: 'Đường dẫn ảnh đại diện sản phẩm',
     example: 'https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=800',
   })
   @IsOptional()
   @IsString()
   PathImage?: string;
 
+  @ApiPropertyOptional({
+    description: 'Danh sách các ảnh chi tiết sản phẩm',
+    example: ['https://images.unsplash.com/photo-1559056199-641a0ac8b55e?w=800'],
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  images?: string[];
+
   @ApiProperty({
-    description: 'Loại sản phẩm (Cà phê hạt, Cà phê bột, Dụng cụ pha chế, Máy pha...)',
-    example: 'Cà phê bột',
+    description: 'Loại sản phẩm (Hạt rang mộc, Bột pha phin, Cà phê ủ lạnh, Dụng cụ pha chế...)',
+    example: 'Hạt rang mộc',
   })
   @IsNotEmpty({ message: 'Loại sản phẩm không được để trống' })
   @IsString()
-  ProductType: string;
+  ProductType!: string;
 
   @ApiPropertyOptional({
     description: 'Số lượng tồn kho ban đầu',
@@ -52,16 +72,16 @@ export class CreateProductDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0, { message: 'Số lượng không được âm' })
-  Quantity?: number = 0;
+  Quantity: number = 0;
 
   @ApiPropertyOptional({
     description: 'Đơn vị tính (gói, hộp, túi, kg, chiếc, bộ...)',
     default: 'gói',
-    example: 'gói',
+    example: 'gói 250g',
   })
   @IsOptional()
   @IsString()
-  Unit?: string = 'gói';
+  Unit: string = 'gói';
 
   @ApiProperty({
     description: 'Đơn giá bán (VNĐ)',
@@ -71,7 +91,7 @@ export class CreateProductDto {
   @Type(() => Number)
   @IsNumber()
   @Min(0, { message: 'Giá sản phẩm không được âm' })
-  Price: number;
+  Price!: number;
 
   @ApiPropertyOptional({
     description: 'Mô tả chi tiết sản phẩm',
@@ -80,6 +100,14 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   Description?: string;
+
+  @ApiPropertyOptional({
+    description: 'Trạng thái kinh doanh (true = đang bán, false = tạm ngưng)',
+    default: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean = true;
 
   @ApiPropertyOptional({
     description: 'Độ rang (Light, Medium, Medium-Dark, Dark)',
@@ -106,7 +134,16 @@ export class CreateProductDto {
   origin?: string;
 
   @ApiPropertyOptional({
+    description: 'Đánh dấu sản phẩm nổi bật',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isFeatured?: boolean = false;
+
+  @ApiPropertyOptional({
     description: 'ID danh mục sản phẩm',
+    example: 'cat-uuid-1234',
   })
   @IsOptional()
   @IsString()
@@ -126,7 +163,7 @@ export class QueryProductDto extends PaginationDto {
 
   @ApiPropertyOptional({
     description: 'Lọc theo Loại sản phẩm (ProductType)',
-    example: 'Cà phê bột',
+    example: 'Hạt rang mộc',
   })
   @IsOptional()
   @IsString()
@@ -138,6 +175,14 @@ export class QueryProductDto extends PaginationDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Lọc theo đường dẫn Slug danh mục',
+    example: 'ca-phe-arabica',
+  })
+  @IsOptional()
+  @IsString()
+  categorySlug?: string;
 
   @ApiPropertyOptional({
     description: 'Giá tối thiểu (VNĐ)',
@@ -158,7 +203,32 @@ export class QueryProductDto extends PaginationDto {
   maxPrice?: number;
 
   @ApiPropertyOptional({
-    description: 'Sắp xếp theo trường (CreateDate, Price, Quantity, ProductName)',
+    description: 'Chỉ lấy sản phẩm còn hàng trong kho (Quantity > 0)',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true || value === 1 || value === '1')
+  @IsBoolean()
+  inStockOnly?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Lọc theo độ rang (Light, Medium, Dark...)',
+  })
+  @IsOptional()
+  @IsString()
+  roastLevel?: string;
+
+  @ApiPropertyOptional({
+    description: 'Lọc theo sản phẩm nổi bật',
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true || value === 1 || value === '1')
+  @IsBoolean()
+  isFeatured?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Sắp xếp theo: Price, CreateDate, Quantity, ProductName, best_seller, price_asc, price_desc, newest, oldest',
     default: 'CreateDate',
   })
   @IsOptional()
@@ -175,6 +245,19 @@ export class QueryProductDto extends PaginationDto {
   sortOrder?: 'asc' | 'desc' = 'desc';
 }
 
+export class ProductCollectionQueryDto {
+  @ApiPropertyOptional({
+    description: 'Số lượng sản phẩm cần lấy',
+    default: 8,
+    example: 8,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  limit?: number = 8;
+}
+
 export class BatchDeleteDto {
   @ApiProperty({
     description: 'Danh sách các ProductID cần xóa được chọn từ checkbox bảng',
@@ -183,7 +266,7 @@ export class BatchDeleteDto {
   })
   @IsArray({ message: 'ids phải là một mảng các mã sản phẩm' })
   @IsNotEmpty({ message: 'Danh sách mã sản phẩm cần xóa không được rỗng' })
-  ids: string[];
+  ids!: string[];
 }
 
 export class BatchDuplicateDto {
@@ -194,6 +277,5 @@ export class BatchDuplicateDto {
   })
   @IsArray({ message: 'ids phải là một mảng các mã sản phẩm' })
   @IsNotEmpty({ message: 'Danh sách mã sản phẩm cần sao chép không được rỗng' })
-  ids: string[];
+  ids!: string[];
 }
-

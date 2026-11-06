@@ -143,6 +143,28 @@ export class OrderRepository {
     });
   }
 
+  async findUserOrders(userId: string, skip: number, take: number, status?: OrderStatus) {
+    const where: any = { userId };
+    if (status) {
+      where.status = status;
+    }
+    const [total, orders] = await Promise.all([
+      this.prisma.order.count({ where }),
+      this.prisma.order.findMany({
+        where,
+        skip,
+        take,
+        include: {
+          items: {
+            include: { product: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    return { total, orders };
+  }
+
   async findAllOrders(skip: number, take: number, status?: OrderStatus) {
     const where = status ? { status } : {};
     const [total, orders] = await Promise.all([

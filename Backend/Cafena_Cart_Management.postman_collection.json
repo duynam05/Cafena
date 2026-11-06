@@ -1,0 +1,215 @@
+{
+  "info": {
+    "_postman_id": "cafena-cart-collection-v1",
+    "name": "Cafena Coffee - 5. Cart Management",
+    "description": "Bộ sưu tập kiểm thử toàn diện Chức năng 5: Quản lý giỏ hàng (Tạo giỏ hàng, Lấy chi tiết, Thêm sản phẩm, Kiểm tra tồn tại & tồn kho, Cập nhật số lượng, Xóa món, Xóa toàn bộ, Tính tổng món & tổng tiền, Kiểm tra lại giá và kho trước khi đặt hàng).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "customerToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "cartItemId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Đăng nhập Khách hàng lấy Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const res = pm.response.json();",
+              "    if (res.data && res.data.accessToken) {",
+              "        pm.collectionVariables.set('customerToken', res.data.accessToken);",
+              "        console.log('Đã lưu customerToken vào biến Collection!');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"customer@cafena.vn\",\n  \"password\": \"customer123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "1. Lấy thông tin giỏ hàng (Get Cart)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const res = pm.response.json();",
+              "    if (res.data && res.data.items && res.data.items.length > 0) {",
+              "        pm.collectionVariables.set('cartItemId', res.data.items[0].id);",
+              "        console.log('Đã lưu cartItemId vào biến Collection!');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cart",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart"]
+        },
+        "description": "Lấy giỏ hàng của tài khoản, tự động tính tổng số lượng món (totalItems), tổng tiền (totalAmount) và trạng thái kho của từng món."
+      }
+    },
+    {
+      "name": "2. Thêm sản phẩm vào giỏ hàng (Add to Cart)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "    const res = pm.response.json();",
+              "    if (res.data && res.data.cart && res.data.cart.items && res.data.cart.items.length > 0) {",
+              "        pm.collectionVariables.set('cartItemId', res.data.cart.items[0].id);",
+              "        console.log('Đã cập nhật cartItemId mới!');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": \"CF-0001\",\n  \"quantity\": 2\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cart",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart"]
+        },
+        "description": "Thêm sản phẩm vào giỏ hàng (tự động kiểm tra sản phẩm tồn tại, đang kinh doanh và đủ tồn kho)."
+      }
+    },
+    {
+      "name": "3. Thêm sản phẩm thứ 2 vào giỏ hàng",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"productId\": \"CF-0002\",\n  \"quantity\": 1\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cart",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart"]
+        }
+      }
+    },
+    {
+      "name": "4. Kiểm tra lại giá & tồn kho trước khi đặt hàng (Validate Cart)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cart/validate",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart", "validate"]
+        },
+        "description": "Đối chiếu toàn bộ giỏ hàng với CSDL thực tế: phát hiện và cảnh báo nếu có món thay đổi giá, hết hàng, hoặc tồn kho không đủ."
+      }
+    },
+    {
+      "name": "5. Cập nhật số lượng của 1 món trong giỏ (Update Quantity)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"quantity\": 3\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/cart/items/{{cartItemId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart", "items", "{{cartItemId}}"]
+        },
+        "description": "Cập nhật số lượng mới (nếu truyền quantity <= 0 sẽ tự động xóa món khỏi giỏ)."
+      }
+    },
+    {
+      "name": "6. Xóa một món khỏi giỏ hàng (Remove Item)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cart/items/{{cartItemId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart", "items", "{{cartItemId}}"]
+        },
+        "description": "Xóa món cụ thể khỏi giỏ hàng."
+      }
+    },
+    {
+      "name": "7. Xóa toàn bộ giỏ hàng (Clear Cart)",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/cart",
+          "host": ["{{baseUrl}}"],
+          "path": ["cart"]
+        },
+        "description": "Xóa sạch toàn bộ sản phẩm trong giỏ hàng."
+      }
+    }
+  ]
+}

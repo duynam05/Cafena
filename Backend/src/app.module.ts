@@ -14,6 +14,7 @@ import {
   UserRepository,
   CategoryRepository,
   OrderRepository,
+  CartRepository,
   InventoryRepository,
 } from './repositories/index.js';
 
@@ -25,6 +26,7 @@ import {
   MailService,
   UserService,
   CategoryService,
+  CartService,
   OrderService,
   InventoryService,
   StatisticsService,
@@ -38,6 +40,7 @@ import {
   AuthController,
   UserController,
   CategoryController,
+  CartController,
   OrderController,
   InventoryController,
   StatisticsController,
@@ -76,6 +79,7 @@ import { JwtStrategy, JwtAuthGuard, RolesGuard } from './guards/index.js';
     AuthController,
     UserController,
     CategoryController,
+    CartController,
     OrderController,
     InventoryController,
     StatisticsController,
@@ -88,6 +92,7 @@ import { JwtStrategy, JwtAuthGuard, RolesGuard } from './guards/index.js';
     UserRepository,
     CategoryRepository,
     OrderRepository,
+    CartRepository,
     InventoryRepository,
 
     // Business Services
@@ -97,6 +102,7 @@ import { JwtStrategy, JwtAuthGuard, RolesGuard } from './guards/index.js';
     MailService,
     UserService,
     CategoryService,
+    CartService,
     OrderService,
     InventoryService,
     StatisticsService,
@@ -113,6 +119,7 @@ import { JwtStrategy, JwtAuthGuard, RolesGuard } from './guards/index.js';
     UserRepository,
     CategoryRepository,
     OrderRepository,
+    CartRepository,
     InventoryRepository,
   ],
 })

@@ -20,7 +20,12 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
-    "test:auth": "nest build && tsx test/verify-auth.ts"
+    "test:auth": "nest build && tsx test/verify-auth.ts",
+    "test:user": "nest build && tsx test/verify-user.ts",
+    "test:product": "nest build && tsx test/verify-product.ts",
+    "test:category": "nest build && tsx test/verify-category.ts",
+    "test:cart": "nest build && tsx test/verify-cart.ts",
+    "test:all": "nest build && tsx test/verify-auth.ts && tsx test/verify-user.ts && tsx test/verify-product.ts && tsx test/verify-category.ts && tsx test/verify-cart.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.0",

@@ -42,6 +42,7 @@ model User {
   fullName             String
   phone                String?
   address              String?
+  avatar               String?
   role                 Role      @default(CUSTOMER)
   isActive             Boolean   @default(true)
   isEmailVerified      Boolean   @default(false)
@@ -56,19 +57,42 @@ model User {
   updatedAt            DateTime  @updatedAt
 
   orders               Order[]
+  addresses            Address[]
   cart                 Cart?
   logs                 InventoryLog[]
 
   @@map("users")
 }
 
+model Address {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recipientName String
+  phone         String
+  streetAddress String
+  ward          String?
+  district      String?
+  province      String?
+  fullAddress   String
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("addresses")
+}
+
 model Category {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  slug        String    @unique
+  id          String     @id @default(uuid())
+  name        String     @unique
+  slug        String     @unique
   description String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive    Boolean    @default(true)
+  parentId    String?
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[] @relation("CategoryHierarchy")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   products    Product[]
 
@@ -80,12 +104,15 @@ model Product {
   // ProductID, ProductName, PathImage, ProductType, Quantity, Unit, Price, Description, CreateDate, UpdateDate
   ProductID   String   @id
   ProductName String
+  slug        String?  @unique
   PathImage   String?
+  images      String[] @default([])
   ProductType String
   Quantity    Int      @default(0)
   Unit        String   @default("gói")
   Price       Float    @default(0)
   Description String?  @db.Text
+  isActive    Boolean  @default(true)
   CreateDate  DateTime @default(now())
   UpdateDate  DateTime @updatedAt
 

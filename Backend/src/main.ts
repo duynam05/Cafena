@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import express from 'express';
+import path from 'path';
 import { AppModule } from './app.module.js';
 import { TransformInterceptor } from './middlewares/transform.interceptor.js';
 import { HttpExceptionFilter } from './middlewares/http-exception.filter.js';
@@ -11,6 +13,9 @@ async function bootstrap() {
 
   // Global prefix
   app.setGlobalPrefix('api/v1');
+
+  // Static files serving (Avatar, hình ảnh tải lên)
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   // Enable CORS
   app.enableCors({

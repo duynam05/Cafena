@@ -5,12 +5,27 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ProductRepository } from '../repositories/product.repository.js';
-import { CreateProductDto, UpdateProductDto, QueryProductDto, BatchDeleteDto, BatchDuplicateDto } from '../dto/product.dto.js';
+import {
+  CreateProductDto,
+  UpdateProductDto,
+  QueryProductDto,
+  BatchDeleteDto,
+  BatchDuplicateDto,
+} from '../dto/product.dto.js';
 import { PaginatedResult } from '../dto/pagination.dto.js';
 import { calculatePagination } from '../utils/pagination.util.js';
 import { ExcelUtil } from '../utils/excel.util.js';
 import { XmlUtil } from '../utils/xml.util.js';
+import { slugify } from '../utils/slug.util.js';
 import { Product, Prisma } from '@prisma/client';
+
+export type StockStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+
+export function getProductStockStatus(quantity: number): StockStatus {
+  if (quantity <= 0) return 'OUT_OF_STOCK';
+  if (quantity <= 10) return 'LOW_STOCK';
+  return 'IN_STOCK';
+}
 
 @Injectable()
 export class ProductService {
@@ -33,7 +48,25 @@ export class ProductService {
   }
 
   /**
-   * Chức năng 2: Thêm mới sản phẩm
+   * Helper: Sinh slug SEO duy nhất từ tên sản phẩm
+   */
+  async generateUniqueSlug(name: string, excludeId?: string): Promise<string> {
+    const baseSlug = slugify(name);
+    let candidate = baseSlug;
+    let counter = 1;
+
+    while (true) {
+      const existing = await this.productRepo.findBySlug(candidate);
+      if (!existing || (excludeId && existing.ProductID === excludeId)) {
+        return candidate;
+      }
+      candidate = `${baseSlug}-${counter}`;
+      counter++;
+    }
+  }
+
+  /**
+   * Thêm mới sản phẩm
    */
   async create(dto: CreateProductDto): Promise<Product> {
     const ProductID = dto.ProductID?.trim() || (await this.generateProductId());
@@ -43,33 +76,39 @@ export class ProductService {
       throw new ConflictException(`Mã sản phẩm ${ProductID} đã tồn tại trong hệ thống`);
     }
 
+    const slug = dto.slug ? slugify(dto.slug) : await this.generateUniqueSlug(dto.ProductName);
+
     return this.productRepo.create({
       ProductID,
       ProductName: dto.ProductName,
+      slug,
       PathImage: dto.PathImage,
+      images: dto.images || (dto.PathImage ? [dto.PathImage] : []),
       ProductType: dto.ProductType,
       Quantity: dto.Quantity ?? 0,
       Unit: dto.Unit ?? 'gói',
       Price: dto.Price,
       Description: dto.Description,
+      isActive: dto.isActive ?? true,
       roastLevel: dto.roastLevel,
       flavorNotes: dto.flavorNotes,
       origin: dto.origin,
+      isFeatured: dto.isFeatured ?? false,
       category: dto.categoryId ? { connect: { id: dto.categoryId } } : undefined,
     });
   }
 
   /**
-   * Chức năng 1 & 6: Hiển thị bảng phân trang (10-15 item/page) + Tìm kiếm theo Tên, mô tả, mã...
+   * Lấy danh sách sản phẩm với bộ lọc toàn diện & phân trang
    */
-  async findAll(query: QueryProductDto): Promise<PaginatedResult<Product>> {
+  async findAll(query: QueryProductDto): Promise<PaginatedResult<any>> {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 10;
     const skip = (page - 1) * limit;
 
     const where: Prisma.ProductWhereInput = {};
 
-    // Tìm kiếm đa trường: ProductID, ProductName, Description, ProductType
+    // 1. Tìm kiếm đa trường: Tên, Mô tả, Mã sản phẩm (ProductID), Loại sản phẩm
     if (query.search && query.search.trim()) {
       const term = query.search.trim();
       where.OR = [
@@ -80,162 +119,317 @@ export class ProductService {
       ];
     }
 
-    // Lọc theo loại sản phẩm
+    // 2. Lọc theo Loại sản phẩm
     if (query.productType && query.productType.trim()) {
       where.ProductType = { equals: query.productType.trim(), mode: 'insensitive' };
     }
 
-    // Lọc theo danh mục
+    // 3. Lọc theo Danh mục (ID hoặc Slug danh mục)
     if (query.categoryId) {
       where.categoryId = query.categoryId;
+    } else if (query.categorySlug) {
+      where.category = { slug: query.categorySlug.trim() };
     }
 
-    // Lọc theo khoảng giá
+    // 4. Lọc theo Khoảng giá
     if (query.minPrice !== undefined || query.maxPrice !== undefined) {
       where.Price = {};
       if (query.minPrice !== undefined) where.Price.gte = Number(query.minPrice);
       if (query.maxPrice !== undefined) where.Price.lte = Number(query.maxPrice);
     }
 
-    // Sắp xếp
-    const validSortFields = ['CreateDate', 'UpdateDate', 'Price', 'Quantity', 'ProductName'];
-    const sortBy = validSortFields.includes(query.sortBy || '') ? query.sortBy! : 'CreateDate';
-    const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
+    // 5. Lọc sản phẩm còn hàng
+    if (query.inStockOnly) {
+      where.Quantity = { gt: 0 };
+    }
 
-    const [totalItems, items] = await Promise.all([
+    // 6. Lọc theo Độ rang
+    if (query.roastLevel && query.roastLevel.trim()) {
+      where.roastLevel = { equals: query.roastLevel.trim(), mode: 'insensitive' };
+    }
+
+    // 7. Lọc theo Sản phẩm nổi bật
+    if (query.isFeatured !== undefined) {
+      where.isFeatured = query.isFeatured;
+    }
+
+    // 8. Sắp xếp linh hoạt
+    let orderBy: Prisma.ProductOrderByWithRelationInput = { CreateDate: 'desc' };
+
+    const sortAlias = query.sortBy?.toLowerCase();
+    if (sortAlias === 'price_asc' || (query.sortBy === 'Price' && query.sortOrder === 'asc')) {
+      orderBy = { Price: 'asc' };
+    } else if (sortAlias === 'price_desc' || (query.sortBy === 'Price' && query.sortOrder === 'desc')) {
+      orderBy = { Price: 'desc' };
+    } else if (sortAlias === 'newest') {
+      orderBy = { CreateDate: 'desc' };
+    } else if (sortAlias === 'oldest') {
+      orderBy = { CreateDate: 'asc' };
+    } else {
+      const validSortFields = ['ProductID', 'ProductName', 'Price', 'Quantity', 'CreateDate', 'UpdateDate'];
+      const field = validSortFields.includes(query.sortBy || '') ? query.sortBy! : 'CreateDate';
+      const order = query.sortOrder === 'asc' ? 'asc' : 'desc';
+      orderBy = { [field]: order };
+    }
+
+    const [total, rawProducts] = await Promise.all([
       this.productRepo.count(where),
       this.productRepo.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { [sortBy]: sortOrder },
+        orderBy,
       }),
     ]);
 
+    // Bổ sung trạng thái tồn kho (stockStatus) và khả năng đặt mua (canOrder)
+    const enrichedProducts = rawProducts.map((p) => ({
+      ...p,
+      stockStatus: getProductStockStatus(p.Quantity),
+      canOrder: p.isActive && p.Quantity > 0,
+    }));
+
+    const paginationMeta = calculatePagination(total, page, limit);
+
     return {
-      items,
-      meta: calculatePagination(totalItems, page, limit),
+      items: enrichedProducts,
+      meta: paginationMeta,
     };
   }
 
   /**
-   * Chức năng 4: Xem chi tiết sản phẩm
+   * Lấy chi tiết sản phẩm thông minh theo ID hoặc Slug SEO
    */
-  async findOne(ProductID: string): Promise<Product> {
-    const product = await this.productRepo.findById(ProductID);
+  async findOne(idOrSlug: string): Promise<any> {
+    const product = await this.productRepo.findByIdOrSlug(idOrSlug);
+
     if (!product) {
-      throw new NotFoundException(`Không tìm thấy sản phẩm với mã: ${ProductID}`);
+      throw new NotFoundException(`Không tìm thấy sản phẩm với mã hoặc đường dẫn "${idOrSlug}"`);
     }
-    return product;
+
+    return {
+      ...product,
+      stockStatus: getProductStockStatus(product.Quantity),
+      canOrder: product.isActive && product.Quantity > 0,
+    };
   }
 
   /**
-   * Chức năng 3: Cập nhật sản phẩm
+   * Kiểm tra tình trạng kinh doanh và tồn kho của sản phẩm
    */
-  async update(ProductID: string, dto: UpdateProductDto): Promise<Product> {
-    await this.findOne(ProductID);
+  async getStockStatus(idOrSlug: string) {
+    const product = await this.findOne(idOrSlug);
 
-    return this.productRepo.update(ProductID, {
-      ...(dto.ProductName !== undefined && { ProductName: dto.ProductName }),
-      ...(dto.PathImage !== undefined && { PathImage: dto.PathImage }),
-      ...(dto.ProductType !== undefined && { ProductType: dto.ProductType }),
-      ...(dto.Quantity !== undefined && { Quantity: dto.Quantity }),
-      ...(dto.Unit !== undefined && { Unit: dto.Unit }),
-      ...(dto.Price !== undefined && { Price: dto.Price }),
-      ...(dto.Description !== undefined && { Description: dto.Description }),
-      ...(dto.roastLevel !== undefined && { roastLevel: dto.roastLevel }),
-      ...(dto.flavorNotes !== undefined && { flavorNotes: dto.flavorNotes }),
-      ...(dto.origin !== undefined && { origin: dto.origin }),
-      ...(dto.categoryId !== undefined && {
-        category: dto.categoryId ? { connect: { id: dto.categoryId } } : { disconnect: true },
-      }),
+    return {
+      ProductID: product.ProductID,
+      ProductName: product.ProductName,
+      slug: product.slug,
+      Quantity: product.Quantity,
+      Unit: product.Unit,
+      Price: product.Price,
+      isActive: product.isActive,
+      stockStatus: product.stockStatus,
+      canOrder: product.canOrder,
+      message:
+        !product.isActive
+          ? 'Sản phẩm hiện đang tạm ngừng kinh doanh'
+          : product.Quantity === 0
+          ? 'Sản phẩm đã hết hàng trong kho'
+          : product.Quantity <= 10
+          ? `Sản phẩm sắp hết hàng (chỉ còn ${product.Quantity} ${product.Unit})`
+          : 'Sản phẩm sẵn sàng phục vụ',
+    };
+  }
+
+  /**
+   * Lấy danh sách sản phẩm mới nhất
+   */
+  async getNewest(limit: number = 8) {
+    const products = await this.productRepo.findNewest(limit);
+    return products.map((p) => ({
+      ...p,
+      stockStatus: getProductStockStatus(p.Quantity),
+      canOrder: p.isActive && p.Quantity > 0,
+    }));
+  }
+
+  /**
+   * Lấy danh sách sản phẩm nổi bật
+   */
+  async getFeatured(limit: number = 8) {
+    const products = await this.productRepo.findFeatured(limit);
+    return products.map((p) => ({
+      ...p,
+      stockStatus: getProductStockStatus(p.Quantity),
+      canOrder: p.isActive && p.Quantity > 0,
+    }));
+  }
+
+  /**
+   * Lấy danh sách sản phẩm bán chạy nhất
+   */
+  async getBestSellers(limit: number = 8) {
+    const products = await this.productRepo.findBestSellers(limit);
+    return products.map((p) => ({
+      ...p,
+      stockStatus: getProductStockStatus(p.Quantity),
+      canOrder: p.isActive && p.Quantity > 0,
+    }));
+  }
+
+  /**
+   * Lấy danh sách sản phẩm liên quan (ưu tiên cùng Category & cùng ProductType)
+   */
+  async getRelated(idOrSlug: string, limit: number = 4) {
+    const product = await this.productRepo.findByIdOrSlug(idOrSlug);
+    if (!product) {
+      throw new NotFoundException(`Không tìm thấy sản phẩm "${idOrSlug}"`);
+    }
+
+    const related = await this.productRepo.findRelated(product, limit);
+    return related.map((p) => ({
+      ...p,
+      stockStatus: getProductStockStatus(p.Quantity),
+      canOrder: p.isActive && p.Quantity > 0,
+    }));
+  }
+
+  /**
+   * Cập nhật thông tin sản phẩm
+   */
+  async update(id: string, dto: UpdateProductDto): Promise<Product> {
+    const existing = await this.productRepo.findById(id);
+    if (!existing) {
+      throw new NotFoundException(`Không tìm thấy sản phẩm ${id} để cập nhật`);
+    }
+
+    let slug = existing.slug;
+    if (dto.slug) {
+      slug = slugify(dto.slug);
+    } else if (dto.ProductName && dto.ProductName !== existing.ProductName) {
+      slug = await this.generateUniqueSlug(dto.ProductName, id);
+    }
+
+    return this.productRepo.update(id, {
+      ProductName: dto.ProductName,
+      slug,
+      PathImage: dto.PathImage,
+      images: dto.images,
+      ProductType: dto.ProductType,
+      Quantity: dto.Quantity,
+      Unit: dto.Unit,
+      Price: dto.Price,
+      Description: dto.Description,
+      isActive: dto.isActive,
+      roastLevel: dto.roastLevel,
+      flavorNotes: dto.flavorNotes,
+      origin: dto.origin,
+      isFeatured: dto.isFeatured,
+      category: dto.categoryId ? { connect: { id: dto.categoryId } } : undefined,
     });
   }
 
   /**
-   * Chức năng 5a: Xóa 1 bản ghi được chọn
+   * Xóa 1 sản phẩm
    */
-  async remove(ProductID: string): Promise<{ message: string; ProductID: string }> {
-    await this.findOne(ProductID);
-    await this.productRepo.delete(ProductID);
-    return { message: `Đã xóa thành công sản phẩm ${ProductID}`, ProductID };
+  async remove(id: string): Promise<Product> {
+    const existing = await this.productRepo.findById(id);
+    if (!existing) {
+      throw new NotFoundException(`Không tìm thấy sản phẩm ${id} để xóa`);
+    }
+    return this.productRepo.delete(id);
   }
 
   /**
-   * Chức năng 5b: Xóa nhiều bản ghi được chọn từ ô checkbox
+   * Xóa hàng loạt sản phẩm
    */
-  async batchDelete(dto: BatchDeleteDto): Promise<{ message: string; deletedCount: number }> {
-    if (!dto.ids || dto.ids.length === 0) {
-      throw new BadRequestException('Danh sách mã sản phẩm xóa không được rỗng');
-    }
+  async batchDelete(dto: BatchDeleteDto) {
     const count = await this.productRepo.deleteMany(dto.ids);
     return {
-      message: `Đã xóa thành công ${count} sản phẩm được chọn`,
+      message: `Đã xóa thành công ${count} sản phẩm khỏi hệ thống`,
       deletedCount: count,
+      deletedIds: dto.ids,
     };
   }
 
   /**
-   * Chức năng 7: Sao chép 1 bản ghi
+   * Nhân bản 1 sản phẩm
    */
-  async duplicate(ProductID: string): Promise<Product> {
-    const original = await this.findOne(ProductID);
-    const newProductID = await this.generateProductId();
+  async duplicate(id: string): Promise<Product> {
+    const original = await this.productRepo.findById(id);
+    if (!original) {
+      throw new NotFoundException(`Không tìm thấy sản phẩm ${id} để sao chép`);
+    }
+
+    const newId = await this.generateProductId();
+    const newName = `${original.ProductName} (Bản sao)`;
+    const newSlug = await this.generateUniqueSlug(newName);
 
     return this.productRepo.create({
-      ProductID: newProductID,
-      ProductName: `${original.ProductName} (Bản sao)`,
+      ProductID: newId,
+      ProductName: newName,
+      slug: newSlug,
       PathImage: original.PathImage,
+      images: original.images,
       ProductType: original.ProductType,
       Quantity: original.Quantity,
       Unit: original.Unit,
       Price: original.Price,
       Description: original.Description,
+      isActive: original.isActive,
       roastLevel: original.roastLevel,
       flavorNotes: original.flavorNotes,
       origin: original.origin,
+      isFeatured: false,
       category: original.categoryId ? { connect: { id: original.categoryId } } : undefined,
     });
   }
 
   /**
-   * Chức năng 8: Sao chép nhiều bản ghi
+   * Nhân bản nhiều sản phẩm hàng loạt
    */
-  async batchDuplicate(dto: BatchDuplicateDto): Promise<{ message: string; duplicated: Product[] }> {
-    if (!dto.ids || dto.ids.length === 0) {
-      throw new BadRequestException('Danh sách mã sản phẩm sao chép không được rỗng');
+  async batchDuplicate(dto: BatchDuplicateDto) {
+    const originals = await this.productRepo.findByIds(dto.ids);
+    if (originals.length === 0) {
+      throw new NotFoundException('Không tìm thấy sản phẩm nào trong danh sách sao chép');
     }
 
-    const originals = await this.productRepo.findByIds(dto.ids);
-    const results: Product[] = [];
+    const duplicates: Product[] = [];
+    for (const item of originals) {
+      const newId = await this.generateProductId();
+      const newName = `${item.ProductName} (Bản sao)`;
+      const newSlug = await this.generateUniqueSlug(newName);
 
-    for (const original of originals) {
-      const newProductID = await this.generateProductId();
-      const dup = await this.productRepo.create({
-        ProductID: newProductID,
-        ProductName: `${original.ProductName} (Bản sao)`,
-        PathImage: original.PathImage,
-        ProductType: original.ProductType,
-        Quantity: original.Quantity,
-        Unit: original.Unit,
-        Price: original.Price,
-        Description: original.Description,
-        roastLevel: original.roastLevel,
-        flavorNotes: original.flavorNotes,
-        origin: original.origin,
-        category: original.categoryId ? { connect: { id: original.categoryId } } : undefined,
+      const duplicated = await this.productRepo.create({
+        ProductID: newId,
+        ProductName: newName,
+        slug: newSlug,
+        PathImage: item.PathImage,
+        images: item.images,
+        ProductType: item.ProductType,
+        Quantity: item.Quantity,
+        Unit: item.Unit,
+        Price: item.Price,
+        Description: item.Description,
+        isActive: item.isActive,
+        roastLevel: item.roastLevel,
+        flavorNotes: item.flavorNotes,
+        origin: item.origin,
+        isFeatured: false,
+        category: item.categoryId ? { connect: { id: item.categoryId } } : undefined,
       });
-      results.push(dup);
+      duplicates.push(duplicated);
     }
 
     return {
-      message: `Đã sao chép thành công ${results.length} sản phẩm`,
-      duplicated: results,
+      message: `Đã sao chép thành công ${duplicates.length} sản phẩm`,
+      count: duplicates.length,
+      data: duplicates,
     };
   }
 
   /**
-   * Chức năng 9a: Xuất dữ liệu Excel (.xlsx)
+   * Xuất dữ liệu Excel
    */
   async exportExcel(): Promise<Buffer> {
     const products = await this.productRepo.findAllForExport();
@@ -243,36 +437,35 @@ export class ProductService {
   }
 
   /**
-   * Chức năng 9b: Nhập dữ liệu từ Excel (.xlsx)
+   * Nhập dữ liệu từ Excel
    */
   async importExcel(fileBuffer: Buffer) {
-    try {
-      const items = await ExcelUtil.parseProducts(fileBuffer);
-      return this.upsertBatchProducts(items);
-    } catch (error) {
-      throw new BadRequestException((error as Error).message);
-    }
-  }
-
-  /**
-   * Chức năng 9c: Xuất dữ liệu JSON
-   */
-  async exportJson() {
-    return this.productRepo.findAllForExport();
-  }
-
-  /**
-   * Chức năng 9d: Nhập dữ liệu JSON
-   */
-  async importJson(items: any[]) {
-    if (!Array.isArray(items) || items.length === 0) {
-      throw new BadRequestException('Dữ liệu JSON phải là một mảng các sản phẩm');
+    const items = await ExcelUtil.parseProducts(fileBuffer);
+    if (items.length === 0) {
+      throw new BadRequestException('Tệp Excel không chứa dữ liệu sản phẩm hợp lệ');
     }
     return this.upsertBatchProducts(items);
   }
 
   /**
-   * Chức năng 9e: Xuất dữ liệu XML
+   * Xuất dữ liệu JSON
+   */
+  async exportJson(): Promise<any[]> {
+    return this.productRepo.findAllForExport();
+  }
+
+  /**
+   * Nhập dữ liệu JSON
+   */
+  async importJson(items: any[]) {
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new BadRequestException('Dữ liệu JSON phải là một mảng danh sách sản phẩm');
+    }
+    return this.upsertBatchProducts(items);
+  }
+
+  /**
+   * Xuất dữ liệu XML
    */
   async exportXml(): Promise<string> {
     const products = await this.productRepo.findAllForExport();
@@ -280,51 +473,55 @@ export class ProductService {
   }
 
   /**
-   * Chức năng 9f: Nhập dữ liệu XML
+   * Nhập dữ liệu XML
    */
   async importXml(xmlContent: string) {
-    try {
-      const items = await XmlUtil.parseProducts(xmlContent);
-      return this.upsertBatchProducts(items);
-    } catch (error) {
-      throw new BadRequestException((error as Error).message);
+    const items = await XmlUtil.parseProducts(xmlContent);
+    if (items.length === 0) {
+      throw new BadRequestException('Nội dung XML không chứa thẻ <product> hợp lệ');
     }
+    return this.upsertBatchProducts(items);
   }
 
   /**
-   * Helper: Cập nhật hoặc thêm mới hàng loạt sản phẩm khi import
+   * Helper: Upsert hàng loạt khi nhập dữ liệu
    */
   private async upsertBatchProducts(items: any[]) {
     let successCount = 0;
-    const errors: string[] = [];
+    const errors: any[] = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
+    for (const item of items) {
       try {
         const ProductID = item.ProductID?.trim() || (await this.generateProductId());
+        const slug = item.slug ? slugify(item.slug) : await this.generateUniqueSlug(item.ProductName, ProductID);
+
         await this.productRepo.upsert({
           ProductID,
-          ProductName: item.ProductName || `Sản phẩm ${ProductID}`,
+          ProductName: item.ProductName,
+          slug,
           PathImage: item.PathImage || null,
-          ProductType: item.ProductType || 'Cà phê',
-          Quantity: Number(item.Quantity) >= 0 ? Number(item.Quantity) : 0,
+          images: item.images || (item.PathImage ? [item.PathImage] : []),
+          ProductType: item.ProductType || 'Cà phê rang mộc',
+          Quantity: Number(item.Quantity) || 0,
           Unit: item.Unit || 'gói',
-          Price: Number(item.Price) >= 0 ? Number(item.Price) : 0,
+          Price: Number(item.Price) || 0,
           Description: item.Description || null,
+          isActive: item.isActive ?? true,
           roastLevel: item.roastLevel || null,
           flavorNotes: item.flavorNotes || null,
           origin: item.origin || null,
+          isFeatured: item.isFeatured ?? false,
         });
         successCount++;
-      } catch (err) {
-        errors.push(`Dòng ${i + 1}: ${(err as Error).message}`);
+      } catch (err: any) {
+        errors.push({ item, error: err.message });
       }
     }
 
     return {
-      message: `Nhập dữ liệu hoàn tất: Thành công ${successCount}/${items.length} dòng`,
-      total: items.length,
+      message: `Đã xử lý nhập thành công ${successCount}/${items.length} bản ghi`,
       successCount,
+      failureCount: errors.length,
       errors: errors.length > 0 ? errors : undefined,
     };
   }
